@@ -7,7 +7,7 @@ scripts.
 > ⚠️ Apple deprecated NSUserNotification in favor of UserNotifications.framework. For quick, fire‑and‑forget banners
 > from non‑sandboxed tools, NSUserNotification still works on current macOS releases. This package sticks to ctypes on
 > purpose—no extra bridge layers.
-> 
+>
 
 ## Features
 
@@ -61,3 +61,24 @@ notify(
     sound=True,
 )
 ```
+
+## Troubleshooting
+
+- No banner appears at all
+    - Check that Notifications are enabled for the app delivering the toast (often Python, python3, or your terminal
+      app) in `System Settings → Notifications`.
+    - Make sure the alert style is set to Banners or Alerts, not None.
+    - Run in a GUI session (not via SSH or headless server).
+
+- Notification appears only in History, not as a pop‑up
+    - Make sure Focus / Do Not Disturb is off.
+
+- Notifications vanish when docked / using external monitor
+    - By default, macOS mutes banners when mirroring or when a dock (e.g., DisplayLink) is active.
+        - **Fix:** In `System Settings → Notifications`, scroll to the bottom and enable: `Allow notifications when
+          mirroring or sharing the display`.
+    - Also check which display has the menu bar: banners show on the primary menu bar display.
+
+- Still not working?
+    - Try changing alert style to Alerts for visibility.
+    - Confirm Focus automations aren’t muting notifications when docking/screen‑sharing.
