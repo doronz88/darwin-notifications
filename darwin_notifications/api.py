@@ -26,21 +26,26 @@ def sel_registerName(name: str) -> ctypes.c_void_p:
 
 
 def create_objc_msgSend_t(restype, *argtypes):
-    """
-    Return a typed callable for objc_msgSend that won't be mutated elsewhere.
-    """
+    """Return a typed callable for objc_msgSend that won't be mutated elsewhere."""
     return ctypes.cast(libobjc.objc_msgSend, ctypes.CFUNCTYPE(restype, *argtypes))
 
 
+def objc_msgSend(obj: ctypes.c_void_p, selector: str, *args) -> ctypes.c_void_p:
+    """Invoke `objc_msgSend`."""
+    invocation = ctypes.cast(libobjc.objc_msgSend, ctypes.CFUNCTYPE(
+        ctypes.c_void_p, *([ctypes.c_void_p] * (len(args) + 2))))
+    return invocation(obj, sel_registerName(selector), *args)
+
+
 NSString = objc_getClass("NSString")
-stringWithUTF8String_ = create_objc_msgSend_t(
-    ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_char_p
-)  # id stringWithUTF8String:(id, SEL, const char*)
+NSAutoreleasePool = objc_getClass("NSAutoreleasePool")
+NSUserNotification = objc_getClass("NSUserNotification")
+NSUserNotificationCenter = objc_getClass("NSUserNotificationCenter")
 
 
 def ns_str(py_str: str) -> ctypes.c_void_p:
     """Convert python string into NSString *"""
-    return stringWithUTF8String_(NSString, sel_registerName("stringWithUTF8String:"), py_str.encode("utf-8"))
+    return objc_msgSend(NSString, "stringWithUTF8String:", py_str.encode("utf-8"))
 
 
 def notify(
@@ -78,47 +83,31 @@ def notify(
     """Post NSUserNotification"""
 
     # @autoreleasepool
-    NSAutoreleasePool = objc_getClass("NSAutoreleasePool")
-    pool_new = create_objc_msgSend_t(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)  # +new
-    pool_drain = create_objc_msgSend_t(None, ctypes.c_void_p, ctypes.c_void_p)  # -drain
-    pool = pool_new(NSAutoreleasePool, sel_registerName("new"))
+    # pool_new = create_objc_msgSend_t(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)  # +new
+    # pool_drain = create_objc_msgSend_t(None, ctypes.c_void_p, ctypes.c_void_p)  # -drain
+    pool = objc_msgSend(NSAutoreleasePool, "new")
 
     try:
-        # NSUserNotification *notif = [[NSUserNotification alloc] init]
-        NSUserNotification = objc_getClass("NSUserNotification")
-        alloc = create_objc_msgSend_t(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
-        init = create_objc_msgSend_t(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
-
-        notif = alloc(NSUserNotification, sel_registerName("alloc"))
-        notif = init(notif, sel_registerName("init"))
-
-        set_obj = create_objc_msgSend_t(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
+        # NSUserNotification *notif = [NSUserNotification new]
+        notif = objc_msgSend(NSUserNotification, "new")
 
         if title:
-            set_obj(notif, sel_registerName("setTitle:"), ns_str(title))
+            objc_msgSend(notif, "setTitle:", ns_str(title))
         if subtitle:
-            set_obj(notif, sel_registerName("setSubtitle:"), ns_str(subtitle))
+            objc_msgSend(notif, "setSubtitle:", ns_str(subtitle))
         if text:
-            set_obj(notif, sel_registerName("setInformativeText:"), ns_str(text))
+            objc_msgSend(notif, "setInformativeText:", ns_str(text))
         if sound:
             # NSString * const NSUserNotificationDefaultSoundName
-            set_obj(notif, sel_registerName("setSoundName:"), ns_str("NSUserNotificationDefaultSoundName"))
+            objc_msgSend(notif, "setSoundName:", ns_str("NSUserNotificationDefaultSoundName"))
 
         # [[NSUserNotificationCenter defaultUserNotificationCenter] deliverNotification:notif]
-        NSUserNotificationCenter = objc_getClass("NSUserNotificationCenter")
-        defaultCenter = create_objc_msgSend_t(
-            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p
-        )
-        deliver = create_objc_msgSend_t(
-            None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p
-        )
+        center = objc_msgSend(NSUserNotificationCenter, "defaultUserNotificationCenter")
+        objc_msgSend(center, "deliverNotification:", notif)
 
-        center = defaultCenter(NSUserNotificationCenter, sel_registerName("defaultUserNotificationCenter"))
-        deliver(center, sel_registerName("deliverNotification:"), notif)
-
-        # Optional: keep process alive briefly so the banner can show if you exit immediately.
+        # keep process alive briefly so the banner can show if you exit immediately.
         # (Usually not needed, but harmless.)
         time.sleep(0.05)
 
     finally:
-        pool_drain(pool, sel_registerName("drain"))
+        objc_msgSend(pool, "drain")
