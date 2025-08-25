@@ -1,0 +1,45 @@
+[project]
+name = "darwin-notifications"
+description = "Post darwin-based notifications using NSUserNotification API"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+keywords = ["macos", "darwin", "notify", "notifications"]
+authors = [
+    { name = "doronz88", email = "doron88@gmail.com" }
+]
+maintainers = [
+    { name = "doronz88", email = "doron88@gmail.com" }
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3 :: Only",
+]
+dynamic = ["dependencies", "version"]
+
+[project.urls]
+"Homepage" = "https://github.com/doronz88/darwin_notifications"
+"Bug Reports" = "https://github.com/doronz88/darwin_notifications/issues"
+
+[project.scripts]
+notify = "darwin_notifications.__main__:main"
+
+[tool.setuptools.packages.find]
+exclude = ["docs*", "tests*"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+version = {attr = "darwin_notifications._version.__version__"}
+
+[tool.setuptools_scm]
+version_file = "darwin_notifications/_version.py"
+
+[build-system]
+requires = ["setuptools>=43.0.0", "setuptools_scm>=8", "wheel"]
+build-backend = "setuptools.build_meta"
