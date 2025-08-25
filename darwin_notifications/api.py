@@ -16,6 +16,16 @@ libobjc.objc_getClass.argtypes = [ctypes.c_char_p]
 libobjc.sel_registerName.restype = ctypes.c_void_p
 libobjc.sel_registerName.argtypes = [ctypes.c_char_p]
 
+libobjc.objc_allocateClassPair.restype = ctypes.c_void_p
+libobjc.objc_allocateClassPair.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t]
+
+libobjc.objc_registerClassPair.restype = None
+libobjc.objc_registerClassPair.argtypes = [ctypes.c_void_p]
+
+libobjc.class_addMethod.restype = ctypes.c_bool
+libobjc.class_addMethod.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_char_p]
+
+
 
 def objc_getClass(name: str) -> ctypes.c_void_p:
     return libobjc.objc_getClass(name.encode("utf-8"))
@@ -41,6 +51,54 @@ stringWithUTF8String_ = create_objc_msgSend_t(
 def ns_str(py_str: str) -> ctypes.c_void_p:
     """Convert python string into NSString *"""
     return stringWithUTF8String_(NSString, sel_registerName("stringWithUTF8String:"), py_str.encode("utf-8"))
+
+_DELEGATE_INSTANCE = None
+_SHOULD_PRESENT_IMP = None  # strong ref so GC doesn't free the IMP
+
+def ensure_delegate(center_ptr: int):
+    global _DELEGATE_INSTANCE, _SHOULD_PRESENT_IMP
+    if _DELEGATE_INSTANCE:
+        return
+
+    NSObject = objc_getClass("NSObject")
+    cls = libobjc.objc_allocateClassPair(NSObject, b"DNNotifyDelegate", 0)
+
+    sig = b"c@:@@"  # BOOL, self, _cmd, center, notification
+
+    should_present_proto = ctypes.CFUNCTYPE(
+        ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p
+    )
+
+    def _should_present(self, _cmd, _center, _notification):
+        return True
+
+    should_present = should_present_proto(_should_present)
+    _SHOULD_PRESENT_IMP = should_present  # <-- keep strong ref
+
+    libobjc.class_addMethod(
+        cls,
+        sel_registerName("userNotificationCenter:shouldPresentNotification:"),
+        ctypes.cast(should_present, ctypes.c_void_p),
+        sig,
+    )
+    libobjc.objc_registerClassPair(cls)
+
+    alloc = create_objc_msgSend_t(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
+    init  = create_objc_msgSend_t(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
+    instance = init(alloc(cls, sel_registerName("alloc")), sel_registerName("init"))
+
+    setDelegate = create_objc_msgSend_t(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
+    setDelegate(center_ptr, sel_registerName("setDelegate:"), instance)
+
+    _DELEGATE_INSTANCE = instance
+
+CoreFoundation = ctypes.CDLL(ctypes.util.find_library("CoreFoundation"))
+CoreFoundation.CFRunLoopRunInMode.restype = ctypes.c_int
+CoreFoundation.CFRunLoopRunInMode.argtypes = [ctypes.c_void_p, ctypes.c_double, ctypes.c_bool]
+kCFRunLoopDefaultMode = ctypes.c_void_p.in_dll(CoreFoundation, "kCFRunLoopDefaultMode")
+
+def pump_runloop(seconds: float = 0.3):
+    CoreFoundation.CFRunLoopRunInMode(kCFRunLoopDefaultMode, seconds, False)
 
 
 def notify(
@@ -104,6 +162,9 @@ def notify(
             # NSString * const NSUserNotificationDefaultSoundName
             set_obj(notif, sel_registerName("setSoundName:"), ns_str("NSUserNotificationDefaultSoundName"))
 
+        # Give each notification a unique identifier to avoid coalescing
+        set_obj(notif, sel_registerName("setIdentifier:"), ns_str(f"dn-{time.time_ns()}"))
+
         # [[NSUserNotificationCenter defaultUserNotificationCenter] deliverNotification:notif]
         NSUserNotificationCenter = objc_getClass("NSUserNotificationCenter")
         defaultCenter = create_objc_msgSend_t(
@@ -114,11 +175,13 @@ def notify(
         )
 
         center = defaultCenter(NSUserNotificationCenter, sel_registerName("defaultUserNotificationCenter"))
-        deliver(center, sel_registerName("deliverNotification:"), notif)
 
-        # Optional: keep process alive briefly so the banner can show if you exit immediately.
-        # (Usually not needed, but harmless.)
-        time.sleep(0.05)
+        # Ensure banner shows even if we're foreground
+        ensure_delegate(center)
+
+        deliver(center, sel_registerName("deliverNotification:"), notif)
+        pump_runloop(1.5)  # instead of time.sleep
+
 
     finally:
         pool_drain(pool, sel_registerName("drain"))
