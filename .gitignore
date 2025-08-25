@@ -1,0 +1,5 @@
+.DS_Store
+.idea
+*.egg-info
+__pycache__
+darwin_notifications/_version.py
